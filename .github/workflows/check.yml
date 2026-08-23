@@ -1,0 +1,56 @@
+name: smg-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'Job ID from the checker frontend'
+        required: true
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install WireGuard
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools
+
+      - name: Connect US tunnel
+        run: |
+          sudo bash -c 'cat > /etc/wireguard/wgusa.conf <<EOF
+          [Interface]
+          PrivateKey = ${{ secrets.WG_PRIVATE_KEY }}
+          Address = 10.2.0.2/32
+          DNS = 1.1.1.1
+          [Peer]
+          PublicKey = ${{ vars.WG_PUBLIC_KEY }}
+          AllowedIPs = 0.0.0.0/0
+          Endpoint = ${{ vars.WG_ENDPOINT }}
+          PersistentKeepalive = 25
+          EOF'
+          sudo wg-quick up wgusa || echo "TUNNEL_FAILED"
+
+      - name: Verify egress IP
+        run: |
+          echo "Egress IP:"
+          curl -s --max-time 10 https://ipwho.is/ | grep -E '"ip"|"country"|"city"' || echo "ipwho.is unreachable (tunnel may be flaky, continuing anyway)"
+
+      - name: Run checker
+        env:
+          SMG_HMAC_SECRET: ${{ secrets.SMG_HMAC_SECRET }}
+          SMG_CONNECT_API_TOKEN: ${{ secrets.SMG_CONNECT_API_TOKEN }}
+          RESULT_TOKEN: ${{ secrets.RESULT_TOKEN }}
+          WORKER_URL: ${{ vars.WORKER_URL }}
+          JOB_ID: ${{ github.event.inputs.job_id }}
+        run: node check.mjs
