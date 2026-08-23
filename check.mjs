@@ -151,10 +151,10 @@ async function main() {
   if (JOB_ID) {
     const job = await fetchJson(`${WORKER_URL}/api/job?id=${JOB_ID}`);
     if (job.status !== 'pending') { console.log('Job already processed'); return; }
-    const pending = await fetchJson(`${WORKER_URL}/api/pending?token=${encodeURIComponent(RESULT_TOKEN)}`);
+    const pending = await fetchJson(`${WORKER_URL}/api/pending?token=${encodeURIComponent(RESULT_TOKEN)}&jobId=${JOB_ID}`);
     const mine = (pending.jobs || []).find(j => j.jobId === JOB_ID);
     if (mine) await runJob(JOB_ID, mine.cards);
-    else console.log('Job not in pending list yet (age < 90s), skipping; schedule pass will handle it');
+    else console.log('Job cards not available; schedule pass will handle it');
     return;
   }
 
