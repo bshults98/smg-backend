@@ -15,7 +15,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -23,8 +23,18 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install WireGuard
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools
+      - name: Install WireGuard (if missing)
+        run: |
+          if command -v wg >/dev/null 2>&1; then
+            echo "wireguard-tools already installed"
+          else
+            for i in 1 2 3; do
+              sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools && break
+              echo "apt attempt $i failed, retrying in 10s..."
+              sleep 10
+            done
+          fi
+          wg --version
 
       - name: Connect US tunnel
         run: |
