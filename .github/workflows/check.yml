@@ -46,6 +46,14 @@ jobs:
           echo "Egress IP:"
           curl -s --max-time 10 https://ipwho.is/ | grep -E '"ip"|"country"|"city"' || echo "ipwho.is unreachable (tunnel may be flaky, continuing anyway)"
 
+      - name: Probe SMG API
+        run: |
+          echo "Probing SMG endpoint (expect 400/403/415 on unauthenticated POST, not a hang):"
+          curl -sv --max-time 15 -X POST "https://vista.studiomoviegrill.com/WSVistaWebClient/gift-cards/check-balance" \
+            -H "content-type: application/json; charset=utf-8" \
+            -H "user-agent: okhttp/4.11.0" \
+            -d '{"cardNumber":"5896294206000089320"}' 2>&1 | tail -20 || echo "PROBE_FAILED"
+
       - name: Run checker
         env:
           SMG_HMAC_SECRET: ${{ secrets.SMG_HMAC_SECRET }}
