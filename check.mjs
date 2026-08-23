@@ -55,9 +55,10 @@ async function checkCard(cardNumber) {
   const start = Date.now();
   let response;
   try {
-    response = await fetch(ENDPOINT, { method: 'POST', headers, body });
+    response = await fetch(ENDPOINT, { method: 'POST', headers, body, signal: AbortSignal.timeout(20000) });
   } catch (err) {
-    return { cardNumber, status: 'NETWORK_ERROR', detail: err.message, elapsedMs: Date.now() - start };
+    const detail = err.name === 'TimeoutError' ? 'SMG API timed out (20s)' : err.message;
+    return { cardNumber, status: 'NETWORK_ERROR', detail, elapsedMs: Date.now() - start };
   }
 
   const elapsedMs = Date.now() - start;
@@ -115,11 +116,16 @@ function classify(result) {
 
 async function postResult(jobId, result) {
   if (!WORKER_URL) { console.log('WORKER_URL not set, skipping result post'); return; }
-  await fetch(`${WORKER_URL}/api/result`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jobId, result, token: RESULT_TOKEN }),
-  });
+  try {
+    await fetch(`${WORKER_URL}/api/result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId, result, token: RESULT_TOKEN }),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (err) {
+    console.log('Result post failed:', err.message);
+  }
 }
 
 async function runJob(jobId, cards) {
@@ -135,25 +141,24 @@ async function runJob(jobId, cards) {
   await postResult(jobId, { results });
 }
 
+async function fetchJson(url) {
+  const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
 async function main() {
   if (JOB_ID) {
-    const resp = await fetch(`${WORKER_URL}/api/job?id=${JOB_ID}`);
-    if (!resp.ok) { console.log(`Job ${JOB_ID} fetch failed: ${resp.status}`); return; }
-    const job = await resp.json();
+    const job = await fetchJson(`${WORKER_URL}/api/job?id=${JOB_ID}`);
     if (job.status !== 'pending') { console.log('Job already processed'); return; }
-    // Get cards from the pending endpoint (job endpoint doesn't expose cards)
-    const pendingResp = await fetch(`${WORKER_URL}/api/pending?token=${encodeURIComponent(RESULT_TOKEN)}`);
-    const pending = await pendingResp.json();
+    const pending = await fetchJson(`${WORKER_URL}/api/pending?token=${encodeURIComponent(RESULT_TOKEN)}`);
     const mine = (pending.jobs || []).find(j => j.jobId === JOB_ID);
     if (mine) await runJob(JOB_ID, mine.cards);
     else console.log('Job not in pending list yet (age < 90s), skipping; schedule pass will handle it');
     return;
   }
 
-  // Schedule mode: pull pending jobs
-  const resp = await fetch(`${WORKER_URL}/api/pending?token=${encodeURIComponent(RESULT_TOKEN)}`);
-  if (!resp.ok) { console.log(`pending fetch failed: ${resp.status}`); return; }
-  const data = await resp.json();
+  const data = await fetchJson(`${WORKER_URL}/api/pending?token=${encodeURIComponent(RESULT_TOKEN)}`);
   console.log(`Found ${(data.jobs || []).length} pending job(s)`);
   for (const job of data.jobs || []) {
     await runJob(job.jobId, job.cards);
