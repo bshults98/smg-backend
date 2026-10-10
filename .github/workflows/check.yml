@@ -82,12 +82,7 @@ jobs:
         env:
           VISA_MONITOR_TOKEN: ${{ secrets.VISA_MONITOR_TOKEN }}
         run: |
-          MIN=$(date -u +%-M)
-          if [ $((MIN % 30)) -ge 10 ]; then
-            echo "not a dispatch slot (minute=$MIN), skipping"
-            exit 0
-          fi
-          echo "dispatching visa-monitor (minute=$MIN)"
+          echo "dispatching visa-monitor (smg run at minute=$(date -u +%-M))"
           curl -sS -X POST \
             -H "Authorization: Bearer $VISA_MONITOR_TOKEN" \
             -H "Accept: application/vnd.github+json" \
