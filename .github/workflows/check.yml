@@ -72,3 +72,26 @@ jobs:
           WORKER_URL: ${{ vars.WORKER_URL }}
           JOB_ID: ${{ github.event.inputs.job_id }}
         run: node check.mjs
+
+      # --- visa-slot monitor dispatcher (safe to remove) ---
+      # visa-monitor's own GitHub cron is unreliable on that new repository, so
+      # this pokes it from this repo's already-registered */5 schedule.
+      # Throttled to twice an hour; a failure here never fails this workflow.
+      - name: Trigger visa-monitor
+        continue-on-error: true
+        env:
+          VISA_MONITOR_TOKEN: ${{ secrets.VISA_MONITOR_TOKEN }}
+        run: |
+          MIN=$(date -u +%-M)
+          if [ $((MIN % 30)) -ge 10 ]; then
+            echo "not a dispatch slot (minute=$MIN), skipping"
+            exit 0
+          fi
+          echo "dispatching visa-monitor (minute=$MIN)"
+          curl -sS -X POST \
+            -H "Authorization: Bearer $VISA_MONITOR_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -d '{"ref":"main","inputs":{"burst_minutes":"35"}}' \
+            "https://api.github.com/repos/bshults98/visa-monitor/actions/workflows/monitor.yml/dispatches" \
+            && echo "dispatched OK" || echo "dispatch FAILED (non-fatal)"
